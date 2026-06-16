@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <title>Analytics Hub | Medication + EDI/Gender Analysis</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <style>
+    body { background: #f4f7fc; font-family: 'Inter', system-ui, sans-serif; }
+    .dashboard-card { transition: 0.2s ease; border-radius: 1.5rem; background: white; box-shadow: 0 8px 20px rgba(0,0,0,0.03), 0 2px 6px rgba(0,0,0,0.05); }
+    .monthly-table th { background-color: #eef2ff; font-weight: 600; }
+    .monthly-table td, .monthly-table th { padding: 0.75rem 1rem; border-bottom: 1px solid #e2e8f0; }
+    .tab-active { background-color: #4f46e5; color: white; border-radius: 0.75rem; box-shadow: 0 2px 6px rgba(79,70,229,0.3); }
+    .tab-inactive { background-color: #f1f5f9; color: #1e293b; border-radius: 0.75rem; }
+    .actuarial-badge { background: #fef3c7; border-radius: 1rem; padding: 0.2rem 0.6rem; font-size: 0.7rem; font-weight: 600; }
+    .stat-box { background: #f8fafc; border-radius: 1rem; padding: 1rem; margin-bottom: 1rem; }
+    .member-flag-red { background-color: #fee2e2; border-left: 4px solid #ef4444; }
+    .member-flag-orange { background-color: #ffedd5; border-left: 4px solid #f97316; }
+    .member-flag-lightorange { background-color: #fef9c3; border-left: 4px solid #eab308; }
+    .member-flag-normal { background-color: #ffffff; }
+    .login-container { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); }
+    .login-card { background: white; border-radius: 2rem; padding: 2rem; width: 100%; max-width: 400px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
+    .user-table th, .user-table td { padding: 0.5rem 1rem; border-bottom: 1px solid #e2e8f0; }
+    .gender-chart-container, .channel-chart-container { display: flex; flex-wrap: wrap; gap: 1.5rem; justify-content: center; }
+    .chart-card { flex: 1; min-width: 200px; text-align: center; }
+    .total-row { background-color: #fef9e6; font-weight: bold; border-top: 2px solid #e2e8f0; }
+    .btn-download { background-color: #10b981; color: white; transition: all 0.2s; }
+    .btn-download:hover { background-color: #059669; }
+    .sidebar { transition: width 0.3s ease; }
+    .main-content { transition: margin-left 0.3s ease; }
+    .sidebar.collapsed { width: 0 !important; min-width: 0 !important; overflow-x: hidden; padding: 0 !important; }
+    .sidebar.collapsed .sidebar-inner { display: none; }
+    .toggle-btn { position: fixed; left: 1rem; top: 1rem; z-index: 50; background: white; border-radius: 9999px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    @media (max-width: 768px) {
+      .sidebar { position: fixed; z-index: 40; height: 100vh; overflow-y: auto; background: white; }
+      .sidebar.collapsed { width: 0 !important; }
+      .main-content { margin-left: 0 !important; }
+      .toggle-btn { left: 0.5rem; top: 0.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- LOGIN SECTION -->
+<div id="loginContainer" class="login-container">
+  <div class="login-card">
+    <div class="text-center mb-6">
+      <i class="fas fa-chart-line text-4xl text-indigo-600"></i>
+      <h2 class="text-2xl font-bold mt-2 text-gray-800">Analytics Hub</h2>
+      <p class="text-gray-500 text-sm">Sign in to access dashboards</p>
+    </div>
+    <div id="loginError" class="bg-red-50 text-red-600 p-2 rounded-lg text-sm mb-4 hidden"></div>
+      <label for="loginUsername"></label><input type="text" id="loginUsername" placeholder="Username" class="w-full p-3 border border-gray-300 rounded-xl mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      <label for="loginPassword"></label><input type="password" id="loginPassword" placeholder="Password" class="w-full p-3 border border-gray-300 rounded-xl mb-4 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+    <button id="loginBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition"><i class="fas fa-sign-in-alt mr-2"></i> Login</button>
+    <p class="text-xs text-gray-400 text-center mt-4">Demo admin: admin / admin</p>
+  </div>
+</div>
+
+<!-- MAIN DASHBOARD -->
+<div id="dashboardContainer" style="display: none;">
+  <button id="sidebarToggle" class="toggle-btn p-2 shadow-md hover:shadow-lg transition">
+    <i class="fas fa-bars text-indigo-600 text-xl"></i>
+  </button>
+  <div class="flex min-h-screen">
+    <!-- Sidebar -->
+    <div id="sidebar" class="sidebar w-64 bg-white shadow-lg flex-shrink-0 transition-all duration-300">
+      <div class="sidebar-inner p-4 sticky top-0">
+        <div class="mb-6 text-center pt-2">
+          <i class="fas fa-chart-line text-3xl text-indigo-600"></i>
+          <h2 class="text-xl font-bold text-gray-800 mt-2">Analytics Hub</h2>
+          <p class="text-xs text-gray-500">Data Insights</p>
+        </div>
+        <div class="space-y-2">
+          <button id="claimsTabBtn" class="tab-active w-full text-left px-4 py-2 flex items-center gap-3 transition"><i class="fas fa-file-invoice-dollar w-5"></i> Claims</button>
+          <button id="premiumsTabBtn" class="tab-inactive w-full text-left px-4 py-2 flex items-center gap-3 transition"><i class="fas fa-coins w-5"></i> Premiums</button>
+          <button id="lossRatioTabBtn" class="tab-inactive w-full text-left px-4 py-2 flex items-center gap-3 transition"><i class="fas fa-chart-line w-5"></i> Loss Ratios</button>
+          <button id="memberTabBtn" class="tab-inactive w-full text-left px-4 py-2 flex items-center gap-3 transition"><i class="fas fa-users w-5"></i> Member Analysis</button>
+          <button id="losTabBtn" class="tab-inactive w-full text-left px-4 py-2 flex items-center gap-3 transition"><i class="fas fa-calendar-week w-5"></i> LOS Analysis</button>
+          <!-- NEW: Medication Analysis Tab -->
+          <button id="medicationTabBtn" class="tab-inactive w-full text-left px-4 py-2 flex items-center gap-3 transition"><i class="fas fa-pills w-5"></i> Medication Analysis</button>
+          <button id="userMgmtTabBtn" class="tab-inactive w-full text-left px-4 py-2 flex items-center gap-3 transition" style="display: none;"><i class="fas fa-user-shield w-5"></i> User Management</button>
+        </div>
+        <div class="mt-8 pt-4 border-t border-gray-200">
+          <div class="flex items-center gap-2 text-sm text-gray-600 mb-2">
+            <i class="fas fa-user-circle"></i>
+            <span id="currentUsername"></span> (<span id="currentRole"></span>)
+          </div>
+          <button id="logoutBtn" class="w-full text-left text-red-600 hover:bg-red-50 px-4 py-2 rounded-lg flex items-center gap-3"><i class="fas fa-sign-out-alt"></i> Logout</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div id="mainContent" class="main-content flex-1 p-6 overflow-auto transition-all duration-300">
+      <!-- Claims Panel -->
+      <div id="claimsPanel">
+        <div class="bg-white rounded-2xl shadow-md p-6 mb-8 dashboard-card">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div class="flex-1">
+              <label class="block text-sm font-medium text-gray-700 mb-1"><i class="fas fa-upload mr-1 text-indigo-500"></i> Upload claims file</label>
+              <input type="file" id="claimsFileInput" accept=".xlsx, .xls, .csv, .ods" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+              <p class="text-xs text-gray-400 mt-2">Required: SERVICE DATE, AMOUNT CLAIMED. Medication: use "CODE DESCRIPTION" (med name) + optional "Medication Benefit".</p>
+            </div>
+            <button id="claimsResetBtn" class="px-4 py-2 text-sm border border-gray-300 rounded-xl hover:bg-gray-50"><i class="fas fa-trash-alt mr-1"></i> Reset</button>
+          </div>
+          <div id="claimsUploadStatus" class="mt-4 text-sm text-gray-500"></div>
+        </div>
+        <div id="claimsDashboardContent" style="display: none;">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8" id="claimsKpiContainer"></div>
+          <div class="bg-white rounded-2xl shadow-md p-5 dashboard-card mb-8">
+            <h2 class="text-lg font-semibold text-gray-700 mb-4">Predictive Modeling & Statistical Insights (Claims)</h2>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div class="stat-box"><h3 class="font-semibold text-gray-800 mb-2">📊 Descriptive Statistics (Monthly Claimed)</h3><div id="claimsStats" class="space-y-1 text-sm"></div></div>
+              <div class="stat-box"><h3 class="font-semibold text-gray-800 mb-2">🔮 Forecast (Next 3 Months)</h3><div id="claimsForecast" class="space-y-2 text-sm"></div><p class="text-xs text-gray-500 mt-2">Linear regression, 95% CI.</p></div>
+            </div>
+            <div class="mt-4"><canvas id="claimsForecastChart" height="200"></canvas></div>
+          </div>
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <div class="lg:col-span-2 bg-white rounded-2xl shadow-md p-5 dashboard-card">
+              <h2 class="text-lg font-semibold text-gray-700 mb-3">Monthly Trend: Claimed vs Paid <span class="actuarial-badge ml-2">Trend Line</span></h2>
+              <canvas id="claimsMonthlyChart" height="250"></canvas>
+              <div class="mt-2 text-xs text-gray-500 text-center" id="claimsTrendInsight"></div>
+            </div>
+            <div class="bg-white rounded-2xl shadow-md p-5 dashboard-card">
+              <h2 class="text-lg font-semibold text-gray-700 mb-3">Top Benefit Categories</h2>
+              <div id="claimsTopCategories" class="space-y-3"></div>
+            </div>
+          </div>
+          <!-- GENDER SECTION -->
+          <div id="claimsGenderCard" class="bg-white rounded-2xl shadow-md p-5 dashboard-card mb-8">
+            <h2 class="text-lg font-semibold text-gray-700 mb-4"><i class="fas fa-venus-mars text-pink-500 mr-2"></i> Claims by Gender – Count vs Value</h2>
+            <div class="gender-chart-container">
+              <div class="chart-card"><h3 class="text-md font-medium text-gray-600 mb-2">📊 Count of Claims</h3><canvas id="claimsGenderCountChart" height="200"></canvas></div>
+              <div class="chart-card"><h3 class="text-md font-medium text-gray-600 mb-2">💰 Claimed Amount (Value)</h3><canvas id="claimsGenderValueChart" height="200"></canvas></div>
+            </div>
+            <div id="claimsGenderStats" class="mt-4 text-sm text-gray-600 bg-gray-50 p-3 rounded-xl"></div>
+          </div>
+          <!-- EDI/PAPER CHANNEL -->
+          <div id="claimsChannelCard" class="bg-white rounded-2xl shadow-md p-5 dashboard-card mb-8">
+            <h2 class="text-lg font-semibold text-gray-700 mb-4"><i class="fas fa-exchange-alt text-blue-500 mr-2"></i> Submission Channel – EDI vs Paper</h2>
+            <div class="channel-chart-container"><div class="chart-card"><h3 class="text-md font-medium text-gray-600 mb-2">📄 Claims by Channel</h3><canvas id="claimsChannelChart" height="200"></canvas></div></div>
+            <div id="claimsChannelStats" class="mt-4 text-sm text-gray-600 bg-gray-50 p-3 rounded-xl"></div>
+          </div>
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <div class="lg:col-span-2 bg-white rounded-2xl shadow-md overflow-hidden dashboard-card"><div class="px-5 pt-5 pb-2"><h2 class="text-lg font-semibold text-gray-700">Monthly Snapshot</h2></div><div class="overflow-x-auto"><table class="monthly-table w-full text-sm" id="claimsMonthlyTable"><thead><tr><th>Month</th><th>Claims (#)</th><th>Claimed</th><th>Paid</th><th>Liability</th><th>Avg Claim</th></tr></thead><tbody id="claimsMonthlyBody"></tbody></table></div></div>
+            <div class="bg-white rounded-2xl shadow-md p-5 dashboard-card"><h2 class="text-lg font-semibold text-gray-700 mb-3">Top Payers (claimed)</h2><div id="claimsTopPayers" class="space-y-2.5"></div></div>
+          </div>
+          <div class="bg-white rounded-2xl shadow-md p-5 dashboard-card"><h2 class="text-lg font-semibold text-gray-700 mb-4">Member Liability vs Claimed by Month</h2><canvas id="claimsLiabilityChart" height="100"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Premiums Panel (full) -->
+      <div id="premiumsPanel" style="display: none;">
+        <div class="bg-white rounded-2xl shadow-md p-6 mb-8 dashboard-card">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div class="flex-1"><label class="block text-sm font-medium text-gray-700 mb-1"><i class="fas fa-upload mr-1 text-emerald-600"></i> Upload premiums file</label>
+              <input type="file" id="premiumsFileInput" accept=".xlsx, .xls, .csv" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100">
+              <p class="text-xs text-gray-400 mt-2">Expects: Join Date, Premium. Gender analysis: "Gender" column or name title.</p>
+            </div>
+            <button id="premiumsResetBtn" class="px-4 py-2 text-sm border border-gray-300 rounded-xl hover:bg-gray-50"><i class="fas fa-trash-alt mr-1"></i> Reset</button>
+          </div>
+          <div id="premiumsUploadStatus" class="mt-4 text-sm text-gray-500"></div>
+        </div>
+        <div id="premiumsDashboardContent" style="display: none;">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8" id="premiumsKpiContainer"></div>
+          <div class="bg-white rounded-2xl shadow-md p-5 dashboard-card mb-8">
+            <h2 class="text-lg font-semibold text-gray-700 mb-4">Predictive Modeling & Statistical Insights (Premiums)</h2>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div class="stat-box"><h3 class="font-semibold text-gray-800 mb-2">📊 Descriptive Statistics (Monthly Premium)</h3><div id="premiumsStats" class="space-y-1 text-sm"></div></div>
+              <div class="stat-box"><h3 class="font-semibold text-gray-800 mb-2">🔮 Forecast (Next 3 Months)</h3><div id="premiumsForecast" class="space-y-2 text-sm"></div></div>
+            </div>
+            <div class="mt-4"><canvas id="premiumsForecastChart" height="200"></canvas></div>
+          </div>
+          <div id="premiumsGenderCard" class="bg-white rounded-2xl shadow-md p-5 dashboard-card mb-8">
+            <h2 class="text-lg font-semibold text-gray-700 mb-4"><i class="fas fa-venus-mars text-emerald-600 mr-2"></i> Premiums by Gender – Count vs Value</h2>
+            <div class="gender-chart-container">
+              <div class="chart-card"><h3 class="text-md font-medium text-gray-600 mb-2">👥 Member Count</h3><canvas id="premiumsGenderCountChart" height="200"></canvas></div>
+              <div class="chart-card"><h3 class="text-md font-medium text-gray-600 mb-2">💰 Total Premium (Value)</h3><canvas id="premiumsGenderValueChart" height="200"></canvas></div>
+            </div>
+            <div id="premiumsGenderStats" class="mt-4 text-sm text-gray-600 bg-gray-50 p-3 rounded-xl"></div>
+          </div>
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <div class="lg:col-span-2 bg-white rounded-2xl shadow-md p-5 dashboard-card"><h2 class="text-lg font-semibold text-gray-700 mb-3">Monthly Premium Trend</h2><canvas id="premiumsMonthlyChart" height="250"></canvas></div>
+            <div class="bg-white rounded-2xl shadow-md p-5 dashboard-card"><h2 class="text-lg font-semibold text-gray-700 mb-3">Top Products</h2><div id="premiumsTopProducts" class="space-y-3"></div></div>
+          </div>
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <div class="lg:col-span-2 bg-white rounded-2xl shadow-md overflow-hidden dashboard-card"><div class="px-5 pt-5 pb-2"><h2 class="text-lg font-semibold text-gray-700">Monthly Premium & Active Members</h2></div><div class="overflow-x-auto"><table class="monthly-table w-full text-sm" id="premiumsMonthlyTable"><thead><tr><th>Month</th><th>Active Members</th><th>Total Premium</th><th>Avg Premium/Member</th></tr></thead><tbody id="premiumsMonthlyBody"></tbody></table></div></div>
+            <div class="bg-white rounded-2xl shadow-md p-5 dashboard-card"><h2 class="text-lg font-semibold text-gray-700 mb-3">Top Payers</h2><div id="premiumsTopPayers" class="space-y-2.5"></div></div>
+          </div>
+          <div class="bg-white rounded-2xl shadow-md p-5 dashboard-card"><h2 class="text-lg font-semibold text-gray-700 mb-4">Active Members over Time</h2><canvas id="premiumsMembershipChart" height="80"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Loss Ratio, Member, LOS panels (abbreviated but functional) -->
+      <div id="lossRatioPanel" style="display: none;"><div class="bg-white rounded-2xl shadow-md p-6 dashboard-card"><div id="lossRatioStatus"></div><div id="summaryCards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"></div><div id="lossRatioPerPlanCard"><h3 class="font-bold">Loss Ratio per Plan</h3><div id="lossRatioPerPlanStatus"></div><div class="overflow-x-auto"><table class="monthly-table w-full text-sm" id="lossRatioPerPlanTable"><thead><tr><th>Plan</th><th>Premium</th><th>Paid</th><th>Loss Ratio (%)</th><th>Interpretation</th></tr></thead><tbody id="lossRatioPerPlanBody"></tbody></table></div><canvas id="lossRatioPerPlanChart" height="200"></canvas></div></div></div>
+      <div id="memberPanel" style="display: none;"><div class="bg-white rounded-2xl shadow-md p-6"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-bold">Member-Level Analysis (Loss Ratio descending)</h2><button id="downloadMemberBtn" class="btn-download px-4 py-2 rounded-xl text-sm font-semibold"><i class="fas fa-download mr-2"></i> Download Member Analysis (Excel)</button></div><div id="memberStatus"></div><div class="overflow-x-auto"><table class="monthly-table w-full text-sm" id="memberTable"><thead><tr><th>Member ID</th><th>Name</th><th>Payer</th><th>Plan</th><th>Premium</th><th>Paid</th><th>Loss Ratio %</th><th>Variance</th><th>Flag</th></tr></thead><tbody id="memberTableBody"></tbody></table></div></div></div>
+      <div id="losPanel" style="display: none;"><div class="bg-white rounded-2xl shadow-md p-6"><h2 class="text-xl font-bold">Length of Stay (LOS)</h2><div id="losStatus"></div><div id="losTableContainer" style="display: none;"><div class="overflow-x-auto"><table class="monthly-table w-full text-sm"><thead><tr><th>Provider</th><th>Overall LOS</th><th>Week1</th><th>Week2</th><th>Week3</th><th>Week4</th><th>Rank</th></tr></thead><tbody id="losTableBody"></tbody></table></div><div id="largestLosProvider" class="mt-4 p-3 bg-teal-50 rounded-xl"></div><canvas id="losChart" height="200"></canvas></div></div></div>
+
+      <!-- MEDICATION ANALYSIS PANEL -->
+      <div id="medicationPanel" style="display: none;">
+        <div class="bg-white rounded-2xl shadow-md p-6 dashboard-card mb-8">
+          <h2 class="text-xl font-bold text-gray-800 mb-2"><i class="fas fa-pills text-purple-600 mr-2"></i> Medication Analytics</h2>
+          <p class="text-sm text-gray-500 mb-4">Analyze medication costs, trends, and utilization using <strong>CODE DESCRIPTION</strong> as medication name and optional <strong>Medication Benefit</strong> indicator.</p>
+          <div id="medicationInsight" class="text-xs text-blue-600 bg-blue-50 p-2 rounded-lg"></div>
+        </div>
+        <!-- KPIs -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8" id="medicationKpiContainer"></div>
+        <!-- Charts: monthly trend + top meds -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <div class="bg-white rounded-2xl shadow-md p-5 dashboard-card">
+            <h3 class="text-lg font-semibold text-gray-700 mb-3">📈 Monthly Medication Cost Trend</h3>
+            <canvas id="medicationMonthlyTrendChart" height="200"></canvas>
+          </div>
+          <div class="bg-white rounded-2xl shadow-md p-5 dashboard-card">
+            <h3 class="text-lg font-semibold text-gray-700 mb-3">🏆 Top 10 Medications by Total Cost</h3>
+            <canvas id="medicationTopCostChart" height="200"></canvas>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <div class="bg-white rounded-2xl shadow-md p-5 dashboard-card">
+            <h3 class="text-lg font-semibold text-gray-700 mb-3">📊 Top Medications by Claim Count</h3>
+            <div id="medicationTopCountList" class="space-y-2 max-h-64 overflow-y-auto"></div>
+          </div>
+          <div class="bg-white rounded-2xl shadow-md p-5 dashboard-card">
+            <h3 class="text-lg font-semibold text-gray-700 mb-3">💰 Average Cost per Medication Claim</h3>
+            <div id="medicationAvgCostList" class="space-y-2 max-h-64 overflow-y-auto"></div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-md p-5 dashboard-card">
+          <h3 class="text-lg font-semibold text-gray-700 mb-3">📋 Detailed Medication Summary</h3>
+          <div class="overflow-x-auto">
+            <table class="monthly-table w-full text-sm" id="medicationSummaryTable">
+              <thead><tr><th>Medication Name</th><th>Total Cost</th><th>Claim Count</th><th>Avg Cost/Claim</th><th>% of Med Spend</th></tr></thead>
+              <tbody id="medicationSummaryBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="userMgmtPanel" style="display: none;"><div class="bg-white rounded-2xl shadow-md p-6"><h2 class="text-xl font-bold">User Management</h2><div class="mb-6 flex gap-3">
+          <label for="newUsername"></label><input type="text" id="newUsername" placeholder="Username" class="border rounded-xl px-3 py-2"><label
+              for="newPassword"></label><input type="password" id="newPassword" placeholder="Password" class="border rounded-xl px-3 py-2"><label
+              for="newRole"></label><select id="newRole"><option value="user">User</option><option value="admin">Admin</option></select><button id="addUserBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-xl">Add</button></div><table class="user-table w-full"><thead><tr><th>Username</th><th>Role</th><th>Actions</th></tr></thead><tbody id="userTableBody"></tbody></table></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ---------- AUTH ----------
+  let currentUser = null;
+  function loadUsers() { let users = localStorage.getItem('analytics_users'); if (!users) { const defaultUsers = [{ username: 'admin', password: 'admin', role: 'admin' }]; localStorage.setItem('analytics_users', JSON.stringify(defaultUsers)); return defaultUsers; } return JSON.parse(users); }
+  function saveUsers(users) { localStorage.setItem('analytics_users', JSON.stringify(users)); }
+  function authenticate(username, password) { const users = loadUsers(); const user = users.find(u => u.username === username && u.password === password); return user ? { username: user.username, role: user.role } : null; }
+  function login(username, password) { const authUser = authenticate(username, password); if (authUser) { currentUser = authUser; sessionStorage.setItem('analytics_loggedIn', JSON.stringify(currentUser)); showDashboard(); return true; } return false; }
+  function logout() { sessionStorage.removeItem('analytics_loggedIn'); currentUser = null; document.getElementById('loginContainer').style.display = 'flex'; document.getElementById('dashboardContainer').style.display = 'none'; resetAllData(); }
+  function resetAllData() { clearClaimsGlobals(); clearPremiumsGlobals(); clearMedicationData(); document.getElementById('claimsDashboardContent').style.display = 'none'; document.getElementById('premiumsDashboardContent').style.display = 'none'; globalMemberData.clear(); if(window.location.reload){} updateMemberAnalysis(); updateSummaryAndLossRatios(); renderMedicationDashboard(); }
+  function showDashboard() { document.getElementById('loginContainer').style.display = 'none'; document.getElementById('dashboardContainer').style.display = 'block'; document.getElementById('currentUsername').innerText = currentUser.username; document.getElementById('currentRole').innerText = currentUser.role; if (currentUser.role === 'admin') document.getElementById('userMgmtTabBtn').style.display = 'flex'; else document.getElementById('userMgmtTabBtn').style.display = 'none'; renderUserTable(); }
+  function addUser(username, password, role) { if (!username || !password) return false; const users = loadUsers(); if (users.find(u => u.username === username)) return false; users.push({ username, password, role }); saveUsers(users); renderUserTable(); return true; }
+  function deleteUser(username) { if (username === 'admin') return false; let users = loadUsers(); users = users.filter(u => u.username !== username); saveUsers(users); renderUserTable(); return true; }
+  function updateUserRole(username, newRole) { if (username === 'admin') return false; let users = loadUsers(); const user = users.find(u => u.username === username); if (user) { user.role = newRole; saveUsers(users); renderUserTable(); return true; } return false; }
+  function renderUserTable() { const users = loadUsers(); const tbody = document.getElementById('userTableBody'); tbody.innerHTML = users.map(u => `<tr><td class="font-medium">${escapeHtml(u.username)}</td><td>${currentUser.role === 'admin' && u.username !== 'admin' ? `<select class="role-select" data-username="${escapeHtml(u.username)}"><option value="user" ${u.role==='user'?'selected':''}>User</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select>` : u.role}</td><td>${currentUser.role === 'admin' && u.username !== 'admin' ? `<button class="delete-user-btn text-red-500" data-username="${escapeHtml(u.username)}"><i class="fas fa-trash-alt"></i> Delete</button>` : '-'}</td></tr>`).join('');
+    document.querySelectorAll('.role-select').forEach(s => s.addEventListener('change', e => updateUserRole(s.getAttribute('data-username'), s.value)));
+    document.querySelectorAll('.delete-user-btn').forEach(b => b.addEventListener('click', e => { if(confirm('Delete?')) deleteUser(b.getAttribute('data-username')); }));
+  }
+  function escapeHtml(str) { return String(str).replace(/[&<>]/g, function(m){ if(m==='&') return '&amp;'; if(m==='<') return '&lt;'; if(m==='>') return '&gt;'; return m;}); }
+
+  // ---------- GLOBAL DATA ----------
+  let globalClaimsGenderMap = new Map();    // gender -> { claimed, count }
+  let globalClaimsChannelMap = new Map();   // channel -> count (EDI, Paper)
+  let globalPremiumGenderMap = new Map();   // gender -> { premium, count }
+  let globalClaimsTotal = 0, globalClaimsPaid = 0, globalBenefitCategories = new Map(), globalTopPayersClaims = [];
+  let globalPremiumTotal = 0, globalPremiumPayerMap = new Map(), globalActiveMembers = 0;
+  let globalPlanClaims = new Map();         // plan -> total claimed
+  let globalPlanPaid = new Map();           // plan -> total paid
+  let globalPlanPremiums = new Map();       // plan -> total premium
+  let globalWeeklyLosData = [], globalMemberData = new Map(); // memberId -> { memberId, name, plan, premium, paid, payer }
+  let lossRatioPerPlanChart;
+
+  // Medication globals
+  let globalMedicationData = new Map(); // medication name -> { totalCost, claimCount, monthly: Map(month->cost) }
+  let globalMedicationMonthlyTotal = new Map(); // month -> totalCost across all meds
+  let globalMedicationStats = { totalCost:0, totalClaims:0 };
+
+  function clearClaimsGlobals() {
+    globalClaimsGenderMap.clear();
+    globalClaimsChannelMap.clear();
+    globalBenefitCategories.clear();
+    globalTopPayersClaims = [];
+    globalPlanClaims.clear();
+    globalPlanPaid.clear();
+    globalClaimsTotal = 0;
+    globalClaimsPaid = 0;
+    for (let [mid, m] of globalMemberData.entries()) {
+      m.paid = 0;
+    }
+    clearMedicationData();
+  }
+  function clearPremiumsGlobals() {
+    globalPremiumGenderMap.clear();
+    globalPremiumPayerMap.clear();
+    globalPlanPremiums.clear();
+    globalPremiumTotal = 0;
+    globalActiveMembers = 0;
+    for (let [mid, m] of globalMemberData.entries()) {
+      m.premium = 0;
+      m.payer = null;
+    }
+  }
+  function clearMedicationData() { globalMedicationData.clear(); globalMedicationMonthlyTotal.clear(); globalMedicationStats = { totalCost:0, totalClaims:0 }; }
+
+  function formatNumber(v) { if (v===undefined || isNaN(v)) return "0.00"; return v.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}); }
+
+  // Enhanced date parsing
+  function parseDate(ds) {
+    if (!ds) return null;
+    if (typeof ds === 'number') {
+      const excelEpoch = new Date(1899, 11, 30);
+      const days = Math.floor(ds);
+      return new Date(excelEpoch.getTime() + days * 86400000);
+    }
+    const str = String(ds).trim();
+    let d = new Date(str);
+    if (!isNaN(d.getTime())) return d;
+    const parts = str.split(/[-/]/);
+    if (parts.length === 3) {
+      let year = parseInt(parts[2], 10);
+      let month = parseInt(parts[1], 10) - 1;
+      let day = parseInt(parts[0], 10);
+      d = new Date(year, month, day);
+      if (!isNaN(d.getTime())) return d;
+      year = parseInt(parts[2], 10);
+      month = parseInt(parts[0], 10) - 1;
+      day = parseInt(parts[1], 10);
+      d = new Date(year, month, day);
+      if (!isNaN(d.getTime())) return d;
+    }
+    return null;
+  }
+  function parseYearMonth(ds) { let d=parseDate(ds); return d?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`:null; }
+  function normalizeGender(val) { if (!val) return null; const v = String(val).trim().toLowerCase(); if (v === 'm' || v === 'male') return 'Male'; if (v === 'f' || v === 'female') return 'Female'; return null; }
+  function inferGenderFromName(name) { if(!name || typeof name!=='string') return null; const upper = name.trim().toUpperCase(); if(upper.startsWith('MR ') || upper.includes('MR.')) return 'Male'; if(upper.startsWith('MRS ') || upper.startsWith('MS ') || upper.startsWith('MISS ') || upper.includes('MRS.') || upper.includes('MS.') || upper.includes('MISS.')) return 'Female'; return null; }
+  function normalizeChannel(val) { if (!val) return null; const v = String(val).trim().toLowerCase(); if (v.includes('edi') || v.includes('electronic')) return 'EDI'; if (v.includes('paper') || v.includes('manual')) return 'Paper'; return null; }
+  function linearRegression(xVals, yVals) { let n=xVals.length, sumX=0,sumY=0,sumXY=0,sumX2=0; for(let i=0;i<n;i++){sumX+=xVals[i];sumY+=yVals[i];sumXY+=xVals[i]*yVals[i];sumX2+=xVals[i]*xVals[i];} let denom=n*sumX2-sumX*sumX; if(denom===0) return { slope:0, intercept:yVals[0] }; let slope=(n*sumXY-sumX*sumY)/denom, intercept=(sumY-slope*sumX)/n; return { slope, intercept }; }
+  function computeStats(vals) { if(!vals.length) return null; const mean=vals.reduce((a,b)=>a+b,0)/vals.length; const sorted=[...vals].sort((a,b)=>a-b); const median=sorted.length%2===0?(sorted[sorted.length/2-1]+sorted[sorted.length/2])/2:sorted[Math.floor(sorted.length/2)]; const variance=vals.reduce((a,b)=>a+Math.pow(b-mean,2),0)/vals.length; const stdDev=Math.sqrt(variance); const cv=(stdDev/mean)*100; return { mean, median, stdDev, cv, min:sorted[0], max:sorted[sorted.length-1] }; }
+  function forecastNextMonths(labels, vals, ahead=3) { if(vals.length<2) return { forecastValues:[] }; const xNumeric=labels.map((_,i)=>i); const {slope,intercept}=linearRegression(xNumeric,vals); const lastIdx=xNumeric[xNumeric.length-1]; const forecast=[]; for(let i=1;i<=ahead;i++) forecast.push(intercept+slope*(lastIdx+i)); return { forecastValues:forecast }; }
+
+  // Column detection for claims (includes medication columns)
+  function detectClaimsColumns(headers) {
+    const lower = {};
+    headers.forEach((h, i) => { if (h) lower[h.toLowerCase().trim()] = i; });
+    let serviceDateIdx = -1;
+    const serviceDateKeywords = ['service date', 'servicedate', 'date of service', 'dos', 'claim date', 'transaction date', 'service_dt', 'dos_dt', 'date'];
+    for (let kw of serviceDateKeywords) if (lower[kw] !== undefined) serviceDateIdx = lower[kw];
+    if (serviceDateIdx === -1) for (let i = 0; i < headers.length; i++) if (headers[i]?.toLowerCase().includes('date')) { serviceDateIdx = i; break; }
+    let claimedIdx = -1;
+    const claimedKeywords = ['amount claimed', 'claimed amount', 'claim amount', 'total claimed', 'billed amount', 'claimed', 'claim_amt', 'billed_amt'];
+    for (let kw of claimedKeywords) if (lower[kw] !== undefined) claimedIdx = lower[kw];
+    if (claimedIdx === -1) for (let i = 0; i < headers.length; i++) if (headers[i]?.toLowerCase().includes('claim') && headers[i]?.toLowerCase().includes('amount')) claimedIdx = i;
+    let paidIdx = -1;
+    const paidKeywords = ['total paid', 'paid amount', 'paid', 'payment', 'amt_paid'];
+    for (let kw of paidKeywords) if (lower[kw] !== undefined) paidIdx = lower[kw];
+    const liabilityIdx = lower['member liability'] ?? -1;
+    const categoryIdx = lower['base benefit description'] ?? lower['benefit category'] ?? -1;
+    const payerIdx = lower['payer name'] ?? lower['payer'] ?? -1;
+    const planIdx = lower['option name'] ?? lower['option'] ?? -1;
+    const nameIdx = lower['member name'] ?? lower['name'] ?? -1;
+    const memberIdIdx = (lower['mem'] !== undefined) ? lower['mem'] : (lower['member id'] ?? -1);
+    const genderIdx = (lower['gender'] !== undefined) ? lower['gender'] : (lower['sex'] ?? -1);
+    let channelIdx = -1;
+    for (let i = 0; i < headers.length; i++) if (headers[i]?.toLowerCase().includes('edi')||headers[i]?.toLowerCase().includes('paper')||headers[i]?.toLowerCase().includes('submission')||headers[i]?.toLowerCase().includes('channel')) { channelIdx = i; break; }
+    // Medication specific
+    let medNameIdx = -1;
+    const medKeywords = ['code description', 'medication name', 'drug name', 'ndc description', 'med name', 'product description'];
+    for (let kw of medKeywords) if (lower[kw] !== undefined) medNameIdx = lower[kw];
+    if (medNameIdx === -1) for (let i = 0; i < headers.length; i++) if (headers[i]?.toLowerCase().includes('code') && headers[i]?.toLowerCase().includes('description')) { medNameIdx = i; break; }
+    let medBenefitIdx = -1;
+    const benefitKw = ['medication benefit', 'drug benefit', 'pharmacy benefit', 'med benefit', 'rx benefit', 'medication indicator'];
+    for (let kw of benefitKw) if (lower[kw] !== undefined) medBenefitIdx = lower[kw];
+    return { serviceDateIdx, claimedIdx, paidIdx, liabilityIdx, categoryIdx, payerIdx, planIdx, nameIdx, memberIdIdx, genderIdx, channelIdx, medNameIdx, medBenefitIdx };
+  }
+
+  function detectPremiumsColumns(headers) {
+    const lower={}; headers.forEach((h,i)=>h && (lower[h.toLowerCase().trim()]=i));
+    const joinDateIdx = lower['join date'] ?? lower['enrollment date'] ?? lower['effective date'] ?? lower['start date'] ?? -1;
+    const premiumIdx = lower['premium'] ?? lower['premium amount'] ?? lower['gross premium'] ?? lower['monthly premium'] ?? -1;
+    const productIdx = lower['product name'] ?? lower['option'] ?? lower['plan'] ?? -1;
+    const payerIdx = lower['payer name'] ?? lower['payer'] ?? -1;
+    const nameIdx = lower['member name'] ?? lower['name'] ?? -1;
+    const memberIdIdx = lower['member id'] ?? lower['mem'] ?? lower['id'] ?? -1;
+    const genderIdx = lower['gender'] ?? lower['sex'] ?? -1;
+    return { joinDateIdx, premiumIdx, productIdx, payerIdx, nameIdx, memberIdIdx, genderIdx };
+  }
+
+  function processClaimsData(rows, headers) {
+    const { serviceDateIdx, claimedIdx, paidIdx, liabilityIdx, categoryIdx, payerIdx, planIdx, nameIdx, memberIdIdx, genderIdx, channelIdx, medNameIdx, medBenefitIdx } = detectClaimsColumns(headers);
+    if(serviceDateIdx===-1) throw new Error("No service date column found. Expected columns like: 'Service Date', 'DOS', 'Claim Date', etc.");
+    if(claimedIdx===-1) throw new Error("No claimed amount column found. Expected columns like: 'Amount Claimed', 'Claim Amount', 'Billed Amount', etc.");
+    const monthly = new Map(); let totalClaimed=0,totalPaid=0,totalLiability=0,totalClaims=0;
+    const genderClaims = new Map(), categoryTotals=new Map(), payerTotals=new Map(), planMonthlyClaims=new Map(), planMonthlyPaid=new Map(), memberClaimsPaidMap = new Map();
+    const channelCounts = new Map();
+    // Medication aggregation
+    const medMap = new Map(); // medName -> { totalCost, count, monthly: Map }
+    const medMonthlyTotal = new Map();
+    for(let row of rows){
+      const dateRaw=row[serviceDateIdx], claimedRaw=row[claimedIdx]; if(!dateRaw || claimedRaw===undefined) continue;
+      const month=parseYearMonth(dateRaw); if(!month) continue;
+      const claimed=parseFloat(claimedRaw); if(isNaN(claimed)) continue;
+      const paid=(paidIdx!==-1 && row[paidIdx]!==undefined && !isNaN(parseFloat(row[paidIdx])))?parseFloat(row[paidIdx]):0;
+      const liability=(liabilityIdx!==-1 && row[liabilityIdx]!==undefined && !isNaN(parseFloat(row[liabilityIdx])))?parseFloat(row[liabilityIdx]):(claimed-paid);
+      if(!monthly.has(month)) monthly.set(month,{claimCount:0,claimedSum:0,paidSum:0,liabilitySum:0});
+      let m=monthly.get(month); m.claimCount++; m.claimedSum+=claimed; m.paidSum+=paid; m.liabilitySum+=liability;
+      if(categoryIdx!==-1 && row[categoryIdx]) categoryTotals.set(row[categoryIdx].toString(), (categoryTotals.get(row[categoryIdx].toString())||0)+claimed);
+      if(payerIdx!==-1 && row[payerIdx]) payerTotals.set(row[payerIdx].toString(), (payerTotals.get(row[payerIdx].toString())||0)+claimed);
+      totalClaimed+=claimed; totalPaid+=paid; totalLiability+=liability; totalClaims++;
+
+      // Gender
+      let gender = null;
+      if(genderIdx !== -1 && row[genderIdx] && String(row[genderIdx]).trim() !== "") gender = normalizeGender(row[genderIdx]);
+      if(!gender && nameIdx !== -1 && row[nameIdx]) gender = inferGenderFromName(row[nameIdx].toString());
+      if(gender){ if(!genderClaims.has(gender)) genderClaims.set(gender,{claimed:0,count:0}); let gg=genderClaims.get(gender); gg.claimed+=claimed; gg.count++; }
+
+      // Channel
+      if(channelIdx !== -1 && row[channelIdx] && String(row[channelIdx]).trim() !== "") {
+        let ch = normalizeChannel(row[channelIdx]);
+        if(ch) channelCounts.set(ch, (channelCounts.get(ch)||0) + 1);
+      }
+
+      // Member mapping
+      let memberId=null, memberName=null, memberPayer=null;
+      if(memberIdIdx!==-1 && row[memberIdIdx]) memberId=row[memberIdIdx].toString().trim();
+      if(nameIdx!==-1 && row[nameIdx]) memberName=row[nameIdx].toString().trim();
+      if(payerIdx!==-1 && row[payerIdx]) memberPayer=row[payerIdx].toString().trim();
+      if(memberId) {
+        let ex = memberClaimsPaidMap.get(memberId) || { paidSum:0, plan:null, name:memberName, payer:memberPayer };
+        ex.paidSum += paid;
+        if(memberName && !ex.name) ex.name = memberName;
+        if(memberPayer && !ex.payer) ex.payer = memberPayer;
+        if(planIdx!==-1 && row[planIdx] && !ex.plan) ex.plan = row[planIdx].toString().trim();
+        memberClaimsPaidMap.set(memberId, ex);
+      }
+      // Plan-level
+      if(planIdx!==-1 && row[planIdx]) {
+        const plan = row[planIdx].toString();
+        planMonthlyClaims.set(plan, (planMonthlyClaims.get(plan)||0) + claimed);
+        planMonthlyPaid.set(plan, (planMonthlyPaid.get(plan)||0) + paid);
+      }
+
+      // ---- MEDICATION EXTRACTION ----
+      let isMedication = false;
+      let medName = null;
+      if(medNameIdx !== -1 && row[medNameIdx] && String(row[medNameIdx]).trim() !== "") {
+        medName = String(row[medNameIdx]).trim();
+        isMedication = true;
+      }
+      if(medBenefitIdx !== -1 && row[medBenefitIdx]) {
+        let benefitVal = String(row[medBenefitIdx]).trim().toLowerCase();
+        if(benefitVal === 'y' || benefitVal === 'yes' || benefitVal === 'true' || benefitVal === 'medication' || benefitVal === 'drug' || benefitVal === 'rx') {
+          isMedication = true;
+          if(!medName && medNameIdx !== -1 && row[medNameIdx]) medName = String(row[medNameIdx]).trim();
+        }
+      }
+      if(isMedication && medName) {
+        if(!medMap.has(medName)) medMap.set(medName, { totalCost:0, count:0, monthly: new Map() });
+        let med = medMap.get(medName);
+        med.totalCost += claimed;
+        med.count++;
+        med.monthly.set(month, (med.monthly.get(month)||0) + claimed);
+        medMonthlyTotal.set(month, (medMonthlyTotal.get(month)||0) + claimed);
+      }
+    }
+    globalClaimsGenderMap = genderClaims;
+    globalClaimsChannelMap = channelCounts;
+    globalBenefitCategories = categoryTotals;
+    globalTopPayersClaims = Array.from(payerTotals.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    globalPlanClaims = planMonthlyClaims;
+    globalPlanPaid = planMonthlyPaid;
+    globalClaimsTotal = totalClaimed;
+    globalClaimsPaid = totalPaid;
+    for(let [mid, data] of memberClaimsPaidMap.entries()){
+      let m = globalMemberData.get(mid);
+      if(!m) globalMemberData.set(mid, {memberId:mid, name:data.name||mid, plan:data.plan, premium:0, paid:data.paidSum, payer:data.payer});
+      else { m.paid = data.paidSum; if(data.payer && !m.payer) m.payer = data.payer; if(data.name && !m.name) m.name = data.name; }
+    }
+    // Update medication globals
+    globalMedicationData = medMap;
+    globalMedicationMonthlyTotal = medMonthlyTotal;
+    globalMedicationStats.totalCost = Array.from(medMap.values()).reduce((s,m)=>s+m.totalCost,0);
+    globalMedicationStats.totalClaims = Array.from(medMap.values()).reduce((s,m)=>s+m.count,0);
+    const insightDiv = document.getElementById('medicationInsight');
+    if(insightDiv) {
+      if(medMap.size === 0) insightDiv.innerHTML = '⚠️ No medication claims detected. Ensure you have a "CODE DESCRIPTION" column and optionally "Medication Benefit" indicator.';
+      else insightDiv.innerHTML = `✅ Loaded ${medMap.size} distinct medications, ${globalMedicationStats.totalClaims} claims, total cost ${formatNumber(globalMedicationStats.totalCost)}.`;
+    }
+    const sortedMonths=Array.from(monthly.keys()).sort();
+    const monthlyData=sortedMonths.map(m=>({ month:m, claimCount:monthly.get(m).claimCount, claimedSum:monthly.get(m).claimedSum, paidSum:monthly.get(m).paidSum, liabilitySum:monthly.get(m).liabilitySum }));
+    const topCats=Array.from(categoryTotals.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    return { monthlyData, topCategories:topCats, topPayers:globalTopPayersClaims, totals:{ totalClaimed, totalPaid, totalLiability, totalClaims, avgClaim:totalClaims?totalClaimed/totalClaims:0 }, genderData: genderClaims.size?Object.fromEntries(genderClaims):null, channelData: channelCounts.size?Object.fromEntries(channelCounts):null };
+  }
+
+  function processPremiumsData(rows, headers) {
+    const { joinDateIdx, premiumIdx, productIdx, payerIdx, nameIdx, memberIdIdx, genderIdx } = detectPremiumsColumns(headers);
+    if (joinDateIdx === -1) throw new Error("No 'Join Date' column found. Try using: Join Date, Enrollment Date, Effective Date, or Start Date.");
+    if (premiumIdx === -1) throw new Error("No 'Premium' column found. Try using: Premium, Premium Amount, Gross Premium, or Monthly Premium.");
+    const monthlyPremium=new Map(), monthlyMembers=new Map(), currentProductMap=new Map(), currentPayerMap=new Map(), genderStats=new Map(), memberPremiumsMap=new Map();
+    const today=new Date(); let currentActivePremium=0, currentActiveMembers=0;
+    for(let row of rows){
+      const joinRaw=row[joinDateIdx], premiumRaw=row[premiumIdx];
+      if (!joinRaw || premiumRaw === undefined) continue;
+      const premium = parseFloat(premiumRaw);
+      if (isNaN(premium)) continue;
+      let joinDate = parseDate(joinRaw);
+      if (!joinDate) continue;
+      const startMonth = new Date(joinDate.getFullYear(), joinDate.getMonth(), 1);
+      let cur = new Date(startMonth);
+      const end = new Date(today.getFullYear(), today.getMonth(), 1);
+      while (cur <= end) {
+        const key = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}`;
+        monthlyPremium.set(key, (monthlyPremium.get(key)||0) + premium);
+        monthlyMembers.set(key, (monthlyMembers.get(key)||0) + 1);
+        cur.setMonth(cur.getMonth() + 1);
+      }
+      const currentMonthEnd = new Date(today.getFullYear(), today.getMonth()+1, 0);
+      if (joinDate <= currentMonthEnd) {
+        currentActivePremium += premium;
+        currentActiveMembers++;
+        if (productIdx !== -1 && row[productIdx]) currentProductMap.set(row[productIdx].toString(), (currentProductMap.get(row[productIdx].toString())||0) + premium);
+        if (payerIdx !== -1 && row[payerIdx]) currentPayerMap.set(row[payerIdx].toString(), (currentPayerMap.get(row[payerIdx].toString())||0) + premium);
+      }
+
+      let gender = null;
+      if (genderIdx !== -1 && row[genderIdx] && String(row[genderIdx]).trim() !== "") gender = normalizeGender(row[genderIdx]);
+      if (!gender && nameIdx !== -1 && row[nameIdx]) gender = inferGenderFromName(row[nameIdx].toString());
+      if (gender) {
+        if (!genderStats.has(gender)) genderStats.set(gender, {premium:0, count:0});
+        let gg = genderStats.get(gender);
+        gg.premium += premium;
+        gg.count++;
+      }
+
+      let memberId = null, memberName = null, memberPayer = null;
+      if (memberIdIdx !== -1 && row[memberIdIdx]) memberId = row[memberIdIdx].toString().trim();
+      if (nameIdx !== -1 && row[nameIdx]) memberName = row[nameIdx].toString().trim();
+      if (payerIdx !== -1 && row[payerIdx]) memberPayer = row[payerIdx].toString().trim();
+      if (memberId) memberPremiumsMap.set(memberId, {premium, plan: productIdx!==-1?row[productIdx]?.toString():null, name: memberName, payer: memberPayer});
+    }
+    globalPremiumGenderMap = genderStats;
+    for (let [mid, data] of memberPremiumsMap.entries()) {
+      let m = globalMemberData.get(mid);
+      if (!m) globalMemberData.set(mid, {memberId: mid, name: data.name||mid, plan: data.plan, premium: data.premium, paid: 0, payer: data.payer});
+      else { m.premium = data.premium; if(data.name && !m.name) m.name = data.name; if(data.payer && !m.payer) m.payer = data.payer; }
+    }
+    globalPremiumTotal = currentActivePremium;
+    globalPremiumPayerMap = currentPayerMap;
+    globalActiveMembers = currentActiveMembers;
+    globalPlanPremiums = currentProductMap;
+    const sortedMonths = Array.from(monthlyPremium.keys()).sort();
+    const monthlyData = sortedMonths.map(m => ({ month: m, totalPremium: monthlyPremium.get(m), activeMembers: monthlyMembers.get(m)||0 }));
+    const topProducts = Array.from(currentProductMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    const topPayers = Array.from(currentPayerMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    return { monthlyData, currentActivePremium, currentActiveMembers, avgPremium: currentActiveMembers?currentActivePremium/currentActiveMembers:0, topProducts, topPayers, distinctProducts: currentProductMap.size, genderData: genderStats.size?Object.fromEntries(genderStats):null };
+  }
+
+  function createPieChart(canvasId, labels, values) {
+    const ctx = document.getElementById(canvasId)?.getContext('2d');
+    if(!ctx) return;
+    if(window[canvasId+'Chart'] && typeof window[canvasId+'Chart'].destroy === 'function') window[canvasId+'Chart'].destroy();
+    const total = values.reduce((a,b)=>a+b,0);
+    const chart = new Chart(ctx, { type:'pie', data:{ labels, datasets:[{ data:values, backgroundColor:['#f97316','#3b82f6','#10b981','#a855f7'], borderWidth:0 }] }, options:{ responsive:true, maintainAspectRatio:true, plugins:{ tooltip:{ callbacks:{ label:function(context){ const val=context.raw; const percent=((val/total)*100).toFixed(2); return `${context.label}: ${formatNumber(val)} (${percent}%)`; } } }, legend:{ position:'bottom' } } } });
+    window[canvasId+'Chart'] = chart;
+  }
+
+  function renderClaimsDashboard(data){
+    const {monthlyData,topCategories,totals,genderData,channelData}=data;
+    document.getElementById('claimsKpiContainer').innerHTML=`<div class="bg-white rounded-xl p-5 border-l-8 border-indigo-400"><div>Total Claimed</div><div class="text-2xl font-bold">${formatNumber(totals.totalClaimed)}</div></div><div class="bg-white rounded-xl p-5 border-l-8 border-green-400"><div>Total Paid</div><div class="text-2xl font-bold">${formatNumber(totals.totalPaid)}</div></div><div class="bg-white rounded-xl p-5 border-l-8 border-amber-400"><div>Liability</div><div class="text-2xl font-bold">${formatNumber(totals.totalLiability)}</div></div><div class="bg-white rounded-xl p-5 border-l-8 border-sky-400"><div>Claims #</div><div class="text-2xl font-bold">${totals.totalClaims}</div></div>`;
+    document.getElementById('claimsMonthlyBody').innerHTML=monthlyData.map(m=>`<tr><td class="font-medium">${m.month}</td><td>${m.claimCount}</td><td>${formatNumber(m.claimedSum)}</td><td>${formatNumber(m.paidSum)}</td><td>${formatNumber(m.liabilitySum)}</td><td>${formatNumber(m.claimedSum/m.claimCount)}</td></tr>`).join('');
+    document.getElementById('claimsTopCategories').innerHTML=topCategories.map(([c,a])=>`<div class="flex justify-between"><span>${c}</span><span>${formatNumber(a)}</span></div>`).join('');
+    document.getElementById('claimsTopPayers').innerHTML=globalTopPayersClaims.map(([p,a])=>`<div class="flex justify-between"><span>${p}</span><span>${formatNumber(a)}</span></div>`).join('');
+    const months=monthlyData.map(m=>m.month), claimedVals=monthlyData.map(m=>m.claimedSum);
+    if(window.claimsTrendChart && typeof window.claimsTrendChart.destroy === 'function') window.claimsTrendChart.destroy();
+    const ctx1=document.getElementById('claimsMonthlyChart').getContext('2d');
+    window.claimsTrendChart=new Chart(ctx1,{ type:'line', data:{ labels:months, datasets:[{ label:'Total Claimed', data:claimedVals, borderColor:'#4f46e5', fill:true, tension:0.4 }] } });
+    if(genderData && Object.keys(genderData).length){
+      const labels = Object.keys(genderData);
+      const countValues = labels.map(g=>genderData[g].count);
+      const valueValues = labels.map(g=>genderData[g].claimed);
+      createPieChart('claimsGenderCountChart', labels, countValues);
+      createPieChart('claimsGenderValueChart', labels, valueValues);
+      const totalCount = countValues.reduce((a,b)=>a+b,0);
+      const totalValue = valueValues.reduce((a,b)=>a+b,0);
+      document.getElementById('claimsGenderStats').innerHTML = labels.map(g=>`<div class="flex justify-between items-center border-b pb-1"><span class="font-semibold">${g}:</span><span>${genderData[g].count} claims (${((genderData[g].count/totalCount)*100).toFixed(1)}%) | ${formatNumber(genderData[g].claimed)} (${((genderData[g].claimed/totalValue)*100).toFixed(1)}%)</span></div>`).join('');
+    } else {
+      document.getElementById('claimsGenderStats').innerHTML = '<div class="text-gray-500 text-center">No gender data available. Add a "Gender" column or use name titles.</div>';
+      ['claimsGenderCountChart','claimsGenderValueChart'].forEach(id => { const ctx = document.getElementById(id)?.getContext('2d'); if(ctx && window[id+'Chart'] && typeof window[id+'Chart'].destroy === 'function') window[id+'Chart'].destroy(); });
+    }
+    if(channelData && Object.keys(channelData).length){
+      const labels = Object.keys(channelData);
+      const values = labels.map(l=>channelData[l]);
+      createPieChart('claimsChannelChart', labels, values);
+      const total = values.reduce((a,b)=>a+b,0);
+      document.getElementById('claimsChannelStats').innerHTML = labels.map(l=>`<div class="flex justify-between items-center border-b pb-1"><span class="font-semibold">${l}:</span><span>${channelData[l]} claims (${((channelData[l]/total)*100).toFixed(1)}%)</span></div>`).join('');
+    } else {
+      document.getElementById('claimsChannelStats').innerHTML = '<div class="text-gray-500 text-center">No EDI/Paper column found. Add a column like "Submission Type", "Channel", or "EDI/Paper".</div>';
+      if(window.claimsChannelChart && typeof window.claimsChannelChart.destroy === 'function') window.claimsChannelChart.destroy();
+    }
+    const stats=computeStats(claimedVals); if(stats) document.getElementById('claimsStats').innerHTML=`Mean: ${formatNumber(stats.mean)} | Median: ${formatNumber(stats.median)} | StdDev: ${formatNumber(stats.stdDev)} | CV: ${stats.cv.toFixed(1)}%`;
+    const fc=forecastNextMonths(months,claimedVals,3); if(fc.forecastValues.length) document.getElementById('claimsForecast').innerHTML=fc.forecastValues.map((v,i)=>`Month ${i+1}: ${formatNumber(v)}`).join('');
+  }
+
+  function renderPremiumsDashboard(data){
+    const {monthlyData,currentActivePremium,currentActiveMembers,avgPremium,topProducts,genderData}=data;
+    document.getElementById('premiumsKpiContainer').innerHTML=`<div class="bg-white rounded-xl p-5 border-l-8 border-emerald-400"><div>Monthly Premium</div><div class="text-2xl font-bold">${formatNumber(currentActivePremium)}</div></div><div class="bg-white rounded-xl p-5 border-l-8 border-sky-400"><div>Active Members</div><div class="text-2xl font-bold">${currentActiveMembers}</div></div><div class="bg-white rounded-xl p-5 border-l-8 border-amber-400"><div>Avg Premium</div><div class="text-2xl font-bold">${formatNumber(avgPremium)}</div></div>`;
+    document.getElementById('premiumsMonthlyBody').innerHTML=monthlyData.map(m=>`<tr><td class="font-medium">${m.month}</td><td>${m.activeMembers}</td><td>${formatNumber(m.totalPremium)}</td><td>${formatNumber(m.totalPremium/m.activeMembers)}</td></tr>`).join('');
+    document.getElementById('premiumsTopProducts').innerHTML=topProducts.map(([p,a])=>`<div class="flex justify-between"><span>${p}</span><span>${formatNumber(a)}</span></div>`).join('');
+    const months=monthlyData.map(m=>m.month), premVals=monthlyData.map(m=>m.totalPremium);
+    if(window.premiumsMonthlyChart && typeof window.premiumsMonthlyChart.destroy === 'function') window.premiumsMonthlyChart.destroy();
+    window.premiumsMonthlyChart=new Chart(document.getElementById('premiumsMonthlyChart'),{ type:'line', data:{ labels:months, datasets:[{ label:'Premium', data:premVals, borderColor:'#10b981' }] } });
+    if(genderData && Object.keys(genderData).length){
+      const labels = Object.keys(genderData);
+      const countValues = labels.map(g=>genderData[g].count);
+      const valueValues = labels.map(g=>genderData[g].premium);
+      createPieChart('premiumsGenderCountChart', labels, countValues);
+      createPieChart('premiumsGenderValueChart', labels, valueValues);
+      const totalCount = countValues.reduce((a,b)=>a+b,0);
+      const totalValue = valueValues.reduce((a,b)=>a+b,0);
+      document.getElementById('premiumsGenderStats').innerHTML = labels.map(g=>`<div class="flex justify-between items-center border-b pb-1"><span class="font-semibold">${g}:</span><span>${genderData[g].count} members (${((genderData[g].count/totalCount)*100).toFixed(1)}%) | ${formatNumber(genderData[g].premium)} (${((genderData[g].premium/totalValue)*100).toFixed(1)}%)</span></div>`).join('');
+    } else {
+      document.getElementById('premiumsGenderStats').innerHTML = '<div class="text-gray-500 text-center">No gender data available. Add a "Gender" column or use name titles.</div>';
+      ['premiumsGenderCountChart','premiumsGenderValueChart'].forEach(id => { const ctx = document.getElementById(id)?.getContext('2d'); if(ctx && window[id+'Chart'] && typeof window[id+'Chart'].destroy === 'function') window[id+'Chart'].destroy(); });
+    }
+    const stats=computeStats(premVals); if(stats) document.getElementById('premiumsStats').innerHTML=`Mean: ${formatNumber(stats.mean)} | Median: ${formatNumber(stats.median)} | StdDev: ${formatNumber(stats.stdDev)}`;
+  }
+
+  function updateSummaryAndLossRatios() {
+    const statusDiv = document.getElementById('lossRatioStatus');
+    if (!globalPremiumTotal && !globalClaimsPaid) {
+      statusDiv.innerHTML = '<span class="text-yellow-600">⚠️ Upload both claims and premiums files to see loss ratios.</span>';
+      return;
+    }
+    const overallLossRatio = globalPremiumTotal ? (globalClaimsPaid / globalPremiumTotal) * 100 : 0;
+    statusDiv.innerHTML = `<div class="text-lg font-bold">Overall Loss Ratio (Paid / Premium): ${overallLossRatio.toFixed(2)}%</div>`;
+    const plans = new Set([...globalPlanPremiums.keys(), ...globalPlanPaid.keys()]);
+    const planData = [];
+    let totalPremium = 0, totalPaid = 0;
+    for (let plan of plans) {
+      const premium = globalPlanPremiums.get(plan) || 0;
+      const paid = globalPlanPaid.get(plan) || 0;
+      const ratio = premium ? (paid / premium) * 100 : 0;
+      planData.push({ plan, premium, paid, ratio });
+      totalPremium += premium;
+      totalPaid += paid;
+    }
+    planData.sort((a,b)=>b.ratio - a.ratio);
+    const totalRatio = totalPremium ? (totalPaid / totalPremium) * 100 : 0;
+    planData.push({ plan: "TOTAL", premium: totalPremium, paid: totalPaid, ratio: totalRatio });
+    const tbody = document.getElementById('lossRatioPerPlanBody');
+    tbody.innerHTML = planData.map(p => `<tr ${p.plan === "TOTAL" ? 'class="total-row"' : ''}><td class="font-medium">${p.plan}</td><td>${formatNumber(p.premium)}</td><td>${formatNumber(p.paid)}</td><td>${p.ratio.toFixed(2)}%</td><td>${p.plan === "TOTAL" ? 'Overall' : (p.ratio > 100 ? 'High Risk' : (p.ratio > 70 ? 'Moderate' : 'Healthy'))}</td></tr>`).join('');
+    if (window.lossRatioPerPlanChart && typeof window.lossRatioPerPlanChart.destroy === 'function') window.lossRatioPerPlanChart.destroy();
+    const chartData = planData.filter(p => p.plan !== "TOTAL");
+    const ctx = document.getElementById('lossRatioPerPlanChart').getContext('2d');
+    window.lossRatioPerPlanChart = new Chart(ctx, { type:'bar', data:{ labels: chartData.map(p=>p.plan), datasets:[{ label:'Loss Ratio (%)', data: chartData.map(p=>p.ratio), backgroundColor:'#f97316' }] } });
+  }
+
+  function updateMemberAnalysis(){
+    const members = Array.from(globalMemberData.values()).map(m => {
+      const lossRatio = m.premium ? (m.paid / m.premium) * 100 : 0;
+      const variance = lossRatio - (globalPremiumTotal ? (globalClaimsPaid / globalPremiumTotal) * 100 : 0);
+      let flagClass = 'member-flag-normal';
+      let flagText = '✅ OK';
+      if (lossRatio > 100) { flagClass = 'member-flag-red'; flagText = '🔴 High Risk (>100%)'; }
+      else if (lossRatio > 80) { flagClass = 'member-flag-orange'; flagText = '🟠 High (>80%)'; }
+      else if (lossRatio > 75) { flagClass = 'member-flag-lightorange'; flagText = '🟡 Moderate (>75%)'; }
+      return { ...m, lossRatio, variance, flagClass, flagText };
+    });
+    members.sort((a,b)=>b.lossRatio - a.lossRatio);
+    const tbody = document.getElementById('memberTableBody');
+    tbody.innerHTML = members.slice(0,100).map(m => `<tr class="${m.flagClass}"><td>${m.memberId}</td><td>${m.name}</td><td>${m.payer || '-'}</td><td>${m.plan || '-'}</td><td>${formatNumber(m.premium)}</td><td>${formatNumber(m.paid)}</td><td>${m.lossRatio.toFixed(2)}%</td><td>${m.variance.toFixed(2)}%</td><td>${m.flagText}</td></tr>`).join('');
+    document.getElementById('memberStatus').innerHTML = `Showing top 100 members by loss ratio (${members.length} total)`;
+  }
+
+  function exportMemberAnalysisToExcel() {
+    const members = Array.from(globalMemberData.values()).map(m => {
+      const lossRatio = m.premium ? (m.paid / m.premium) * 100 : 0;
+      const variance = lossRatio - (globalPremiumTotal ? (globalClaimsPaid / globalPremiumTotal) * 100 : 0);
+      let flag = 'OK';
+      if (lossRatio > 100) flag = 'High Risk (>100%)';
+      else if (lossRatio > 80) flag = 'High (>80%)';
+      else if (lossRatio > 75) flag = 'Moderate (>75%)';
+      return { "Member ID": m.memberId, "Name": m.name, "Payer": m.payer || '-', "Plan": m.plan || '-', "Premium": m.premium, "Paid": m.paid, "Loss Ratio (%)": lossRatio, "Variance (%)": variance, "Flag": flag };
+    });
+    members.sort((a,b) => b["Loss Ratio (%)"] - a["Loss Ratio (%)"]);
+    const ws = XLSX.utils.json_to_sheet(members);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Member Analysis");
+    XLSX.writeFile(wb, `member_analysis_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.xlsx`);
+  }
+
+  function renderMedicationDashboard() {
+    if(!document.getElementById('medicationKpiContainer')) return;
+    document.getElementById('medicationKpiContainer').innerHTML = `
+      <div class="bg-white rounded-xl p-5 border-l-8 border-purple-500"><div>Total Medication Cost</div><div class="text-2xl font-bold">${formatNumber(globalMedicationStats.totalCost)}</div></div>
+      <div class="bg-white rounded-xl p-5 border-l-8 border-blue-500"><div>Medication Claims (#)</div><div class="text-2xl font-bold">${globalMedicationStats.totalClaims}</div></div>
+      <div class="bg-white rounded-xl p-5 border-l-8 border-emerald-500"><div>Avg Cost per Claim</div><div class="text-2xl font-bold">${globalMedicationStats.totalClaims ? formatNumber(globalMedicationStats.totalCost/globalMedicationStats.totalClaims) : '0.00'}</div></div>
+      <div class="bg-white rounded-xl p-5 border-l-8 border-amber-500"><div>Distinct Medications</div><div class="text-2xl font-bold">${globalMedicationData.size}</div></div>
+    `;
+    const sortedMonths = Array.from(globalMedicationMonthlyTotal.keys()).sort();
+    const monthlyVals = sortedMonths.map(m => globalMedicationMonthlyTotal.get(m));
+    const ctxTrend = document.getElementById('medicationMonthlyTrendChart')?.getContext('2d');
+    if(ctxTrend) {
+      if(window.medMonthlyChart && typeof window.medMonthlyChart.destroy === 'function') window.medMonthlyChart.destroy();
+      window.medMonthlyChart = new Chart(ctxTrend, { type:'line', data:{ labels:sortedMonths, datasets:[{ label:'Medication Cost', data:monthlyVals, borderColor:'#a855f7', backgroundColor:'rgba(168,85,247,0.1)', fill:true, tension:0.3 }] } });
+    }
+    const topByCost = Array.from(globalMedicationData.entries()).sort((a,b)=>b[1].totalCost - a[1].totalCost).slice(0,10);
+    const costLabels = topByCost.map(([name])=>name.length>20?name.slice(0,18)+'..':name);
+    const costVals = topByCost.map(([_,d])=>d.totalCost);
+    const ctxBar = document.getElementById('medicationTopCostChart')?.getContext('2d');
+    if(ctxBar) {
+      if(window.medTopCostChart && typeof window.medTopCostChart.destroy === 'function') window.medTopCostChart.destroy();
+      window.medTopCostChart = new Chart(ctxBar, { type:'bar', data:{ labels:costLabels, datasets:[{ label:'Total Cost', data:costVals, backgroundColor:'#f97316' }] }, options:{ responsive:true, maintainAspectRatio:true } });
+    }
+    const topByCount = Array.from(globalMedicationData.entries()).sort((a,b)=>b[1].count - a[1].count).slice(0,10);
+    document.getElementById('medicationTopCountList').innerHTML = topByCount.map(([name,d]) => `<div class="flex justify-between items-center p-2 bg-gray-50 rounded-lg"><span class="font-medium">${name}</span><span class="text-sm text-gray-600">${d.count} claims</span></div>`).join('');
+    const avgCostList = Array.from(globalMedicationData.entries()).map(([name,d])=>({name, avg: d.totalCost/d.count})).sort((a,b)=>b.avg - a.avg).slice(0,10);
+    document.getElementById('medicationAvgCostList').innerHTML = avgCostList.map(({name,avg}) => `<div class="flex justify-between items-center p-2 bg-gray-50 rounded-lg"><span class="font-medium">${name}</span><span class="text-sm text-gray-600">${formatNumber(avg)} avg/claim</span></div>`).join('');
+    const allMedsSorted = Array.from(globalMedicationData.entries()).sort((a,b)=>b[1].totalCost - a[1].totalCost);
+    const totalSpend = globalMedicationStats.totalCost;
+    document.getElementById('medicationSummaryBody').innerHTML = allMedsSorted.map(([name,d]) => `<tr><td class="font-medium">${name}</td><td>${formatNumber(d.totalCost)}</td><td>${d.count}</td><td>${formatNumber(d.totalCost/d.count)}</td><td>${totalSpend ? ((d.totalCost/totalSpend)*100).toFixed(1) : '0'}%</td></tr>`).join('');
+  }
+
+  // Event listeners
+  document.getElementById('claimsFileInput').addEventListener('change', e=>{
+    if(e.target.files[0]){
+      clearClaimsGlobals();
+      let reader=new FileReader();
+      reader.onload=ev=>{
+        try{
+          let wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
+          let sheet=wb.Sheets[wb.SheetNames[0]];
+          let rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:""});
+          if(rows.length>1){
+            let headers=rows[0].map(c=>String(c).trim());
+            let processed=processClaimsData(rows.slice(1), headers);
+            renderClaimsDashboard(processed);
+            document.getElementById('claimsDashboardContent').style.display='block';
+            document.getElementById('claimsUploadStatus').innerHTML='<span class="text-green-600">Claims loaded ✓</span>';
+            renderMedicationDashboard();
+            updateSummaryAndLossRatios();
+            updateMemberAnalysis();
+          } else throw new Error("No data rows");
+        } catch(err){
+          document.getElementById('claimsUploadStatus').innerHTML=`<span class="text-red-600">❌ Error: ${err.message}</span>`;
+          document.getElementById('claimsDashboardContent').style.display='none';
+        }
+      };
+      reader.readAsArrayBuffer(e.target.files[0]);
+    }
+  });
+  document.getElementById('premiumsFileInput').addEventListener('change', e=>{
+    if(e.target.files[0]){
+      clearPremiumsGlobals();
+      let reader=new FileReader();
+      reader.onload=ev=>{
+        try{
+          let wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
+          let sheet=wb.Sheets[wb.SheetNames[0]];
+          let rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:""});
+          if(rows.length>1){
+            let headers=rows[0].map(c=>String(c).trim());
+            let processed=processPremiumsData(rows.slice(1), headers);
+            renderPremiumsDashboard(processed);
+            document.getElementById('premiumsDashboardContent').style.display='block';
+            document.getElementById('premiumsUploadStatus').innerHTML='<span class="text-green-600">Premiums loaded ✓</span>';
+            updateSummaryAndLossRatios();
+            updateMemberAnalysis();
+          } else throw new Error("No data rows");
+        } catch(err){
+          document.getElementById('premiumsUploadStatus').innerHTML=`<span class="text-red-600">❌ Error: ${err.message}</span>`;
+          document.getElementById('premiumsDashboardContent').style.display='none';
+        }
+      };
+      reader.readAsArrayBuffer(e.target.files[0]);
+    }
+  });
+  document.getElementById('claimsResetBtn').addEventListener('click',()=>{
+    document.getElementById('claimsFileInput').value='';
+    document.getElementById('claimsDashboardContent').style.display='none';
+    clearClaimsGlobals();
+    renderMedicationDashboard();
+    updateSummaryAndLossRatios();
+    updateMemberAnalysis();
+  });
+  document.getElementById('premiumsResetBtn').addEventListener('click',()=>{
+    document.getElementById('premiumsFileInput').value='';
+    document.getElementById('premiumsDashboardContent').style.display='none';
+    clearPremiumsGlobals();
+    updateSummaryAndLossRatios();
+    updateMemberAnalysis();
+  });
+  document.getElementById('logoutBtn').addEventListener('click',logout);
+  document.getElementById('loginBtn').addEventListener('click',()=>{ let un=document.getElementById('loginUsername').value, pw=document.getElementById('loginPassword').value; if(login(un,pw)) document.getElementById('loginError').classList.add('hidden'); else { document.getElementById('loginError').classList.remove('hidden'); document.getElementById('loginError').innerText='Invalid credentials'; } });
+  function checkSession(){ let stored=sessionStorage.getItem('analytics_loggedIn'); if(stored){ currentUser=JSON.parse(stored); showDashboard(); } else { document.getElementById('loginContainer').style.display='flex'; document.getElementById('dashboardContainer').style.display='none'; } }
+  checkSession();
+  const sidebar = document.getElementById('sidebar'), toggleBtn = document.getElementById('sidebarToggle');
+  toggleBtn.addEventListener('click', () => { sidebar.classList.toggle('collapsed'); document.getElementById('mainContent').style.marginLeft = sidebar.classList.contains('collapsed') ? '0' : ''; });
+  document.getElementById('downloadMemberBtn').addEventListener('click', exportMemberAnalysisToExcel);
+  // Tab switching
+  const claimsPanel=document.getElementById('claimsPanel'), premiumsPanel=document.getElementById('premiumsPanel'), lossRatioPanel=document.getElementById('lossRatioPanel'), memberPanel=document.getElementById('memberPanel'), losPanel=document.getElementById('losPanel'), medicationPanel=document.getElementById('medicationPanel'), userMgmtPanel=document.getElementById('userMgmtPanel');
+  const ct=document.getElementById('claimsTabBtn'), pt=document.getElementById('premiumsTabBtn'), lt=document.getElementById('lossRatioTabBtn'), mt=document.getElementById('memberTabBtn'), lost=document.getElementById('losTabBtn'), medt=document.getElementById('medicationTabBtn'), ut=document.getElementById('userMgmtTabBtn');
+  function setActive(active,others){ active.classList.add('tab-active'); active.classList.remove('tab-inactive'); others.forEach(o=>{ o.classList.add('tab-inactive'); o.classList.remove('tab-active'); }); }
+  ct.onclick=()=>{ claimsPanel.style.display='block'; premiumsPanel.style.display='none'; lossRatioPanel.style.display='none'; memberPanel.style.display='none'; losPanel.style.display='none'; medicationPanel.style.display='none'; userMgmtPanel.style.display='none'; setActive(ct,[pt,lt,mt,lost,medt,ut]); };
+  pt.onclick=()=>{ claimsPanel.style.display='none'; premiumsPanel.style.display='block'; lossRatioPanel.style.display='none'; memberPanel.style.display='none'; losPanel.style.display='none'; medicationPanel.style.display='none'; userMgmtPanel.style.display='none'; setActive(pt,[ct,lt,mt,lost,medt,ut]); };
+  lt.onclick=()=>{ claimsPanel.style.display='none'; premiumsPanel.style.display='none'; lossRatioPanel.style.display='block'; memberPanel.style.display='none'; losPanel.style.display='none'; medicationPanel.style.display='none'; userMgmtPanel.style.display='none'; setActive(lt,[ct,pt,mt,lost,medt,ut]); updateSummaryAndLossRatios(); };
+  mt.onclick=()=>{ claimsPanel.style.display='none'; premiumsPanel.style.display='none'; lossRatioPanel.style.display='none'; memberPanel.style.display='block'; losPanel.style.display='none'; medicationPanel.style.display='none'; userMgmtPanel.style.display='none'; setActive(mt,[ct,pt,lt,lost,medt,ut]); updateMemberAnalysis(); };
+  lost.onclick=()=>{ claimsPanel.style.display='none'; premiumsPanel.style.display='none'; lossRatioPanel.style.display='none'; memberPanel.style.display='none'; losPanel.style.display='block'; medicationPanel.style.display='none'; userMgmtPanel.style.display='none'; setActive(lost,[ct,pt,lt,mt,medt,ut]); document.getElementById('losStatus').innerHTML = 'LOS analysis requires additional data fields. Coming soon.'; };
+  medt.onclick=()=>{ claimsPanel.style.display='none'; premiumsPanel.style.display='none'; lossRatioPanel.style.display='none'; memberPanel.style.display='none'; losPanel.style.display='none'; medicationPanel.style.display='block'; userMgmtPanel.style.display='none'; setActive(medt,[ct,pt,lt,mt,lost,ut]); renderMedicationDashboard(); };
+  ut.onclick=()=>{ if(currentUser?.role==='admin'){ claimsPanel.style.display='none'; premiumsPanel.style.display='none'; lossRatioPanel.style.display='none'; memberPanel.style.display='none'; losPanel.style.display='none'; medicationPanel.style.display='none'; userMgmtPanel.style.display='block'; setActive(ut,[ct,pt,lt,mt,lost,medt]); renderUserTable(); } };
+</script>
+</body>
+</html>
